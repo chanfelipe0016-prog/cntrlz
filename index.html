@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cntrl+Z</title>
+<style>
+  :root { --bg:#0b0b0f; --fg:#e8e8ee; --accent:#ff2d55; --muted:#8a8a98; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font-family: "Courier New", monospace; min-height:100vh; }
+  main { max-width:720px; margin:0 auto; padding:48px 20px 80px; }
+  h1 { font-size:3rem; text-align:center; letter-spacing:2px; margin:0 0 32px; }
+  label { display:block; margin-bottom:10px; color:var(--muted); }
+  textarea { width:100%; min-height:140px; padding:14px; background:#15151c; color:var(--fg); border:1px solid #2a2a36; border-radius:8px; font:inherit; resize:vertical; }
+  textarea:focus { outline:2px solid var(--accent); }
+  .hint { font-size:.8rem; color:var(--muted); margin-top:6px; }
+  button { font:inherit; cursor:pointer; border:0; border-radius:8px; padding:12px 22px; }
+  #borrar { margin-top:16px; background:var(--accent); color:#fff; font-weight:bold; }
+  #borrar:disabled { opacity:.5; cursor:not-allowed; }
+
+  .overlay { position:fixed; inset:0; background:rgba(0,0,0,.85); display:none; align-items:center; justify-content:center; z-index:10; padding:20px; }
+  .overlay.show { display:flex; }
+  .box { background:#15151c; border:1px solid #2a2a36; border-radius:12px; padding:40px 30px; text-align:center; max-width:560px; width:100%; }
+  .box.error { border-color:var(--accent); }
+  .box.error h2 { font-size:clamp(2rem,7vw,3.2rem); color:var(--accent); margin:0 0 24px; line-height:1.1; }
+  .box button { background:#2a2a36; color:var(--fg); }
+
+  body.glitch main { animation: shake .12s infinite; }
+  body.glitch { animation: hue .2s steps(2) infinite; }
+  body.glitch::before { content:""; position:fixed; inset:0; z-index:20; pointer-events:none;
+    background: repeating-linear-gradient(0deg, rgba(255,0,80,.18) 0 3px, rgba(0,255,255,.15) 3px 6px);
+    mix-blend-mode:screen; animation: flick .1s infinite; }
+  @keyframes shake { 0%{transform:translate(0,0)} 25%{transform:translate(-8px,3px) skewX(4deg)} 50%{transform:translate(6px,-4px)} 75%{transform:translate(-5px,-2px) skewX(-5deg)} 100%{transform:translate(4px,5px)} }
+  @keyframes hue { 0%{filter:hue-rotate(0) contrast(1.4)} 100%{filter:hue-rotate(160deg) contrast(2) invert(.1)} }
+  @keyframes flick { 0%{opacity:1} 50%{opacity:.3} 100%{opacity:.8} }
+
+  #archivo { display:none; margin-top:56px; }
+  #archivo.show { display:block; }
+  #archivo h2 { border-bottom:1px solid #2a2a36; padding-bottom:10px; }
+  #lista { list-style:none; padding:0; margin:0; }
+  #lista li { background:#15151c; border-left:3px solid var(--accent); padding:14px; margin:12px 0; border-radius:6px; white-space:pre-wrap; word-break:break-word; }
+  #lista small { display:block; color:var(--muted); margin-top:8px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Cntrl+Z</h1>
+
+  <label for="recuerdo">Algo que desearía no haber visto en Internet...</label>
+  <textarea id="recuerdo" maxlength="500" placeholder="Un meme, una creepypasta, un video, una funa..."></textarea>
+  <div class="hint">No escribas nombres reales, datos personales ni links. Máximo 500 caracteres.</div>
+  <button id="borrar">Eliminar recuerdos</button>
+
+  <section id="archivo">
+    <h2>Archivo de cosas NO-eliminadas de la memoria</h2>
+    <ul id="lista"></ul>
+  </section>
+</main>
+
+<div class="overlay" id="cargando">
+  <div class="box"><h2>Cargando...</h2></div>
+</div>
+
+<div class="overlay" id="error">
+  <div class="box error">
+    <h2>Error, recuerdo no eliminado</h2>
+    <button id="cerrar">Cerrar</button>
+  </div>
+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getFirestore, collection, addDoc, serverTimestamp, query, orderBy, limit, onSnapshot }
+    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyDjdCOyndtLnEHrwQ4xrEGqzIXuLZinJOA",
+    authDomain: "cntrlz-98b09.firebaseapp.com",
+    projectId: "cntrlz-98b09",
+    storageBucket: "cntrlz-98b09.firebasestorage.app",
+    messagingSenderId: "769377891822",
+    appId: "1:769377891822:web:af3de9b401db94e2fd8aff"
+  };
+
+  const db = getFirestore(initializeApp(firebaseConfig));
+  const col = collection(db, "recuerdos");
+
+  const $ = id => document.getElementById(id);
+  const texto = $("recuerdo"), btn = $("borrar");
+  let pendiente = "";
+  let escuchando = false;
+
+  btn.addEventListener("click", () => {
+    const valor = texto.value.trim();
+    if (!valor) { texto.focus(); return; }
+    pendiente = valor;
+    btn.disabled = true;
+    $("cargando").classList.add("show");
+
+    setTimeout(() => {
+      $("cargando").classList.remove("show");
+      document.body.classList.add("glitch");
+      setTimeout(() => {
+        document.body.classList.remove("glitch");
+        $("error").classList.add("show");
+      }, 1500);
+    }, 3000);
+  });
+
+  $("cerrar").addEventListener("click", async () => {
+    $("error").classList.remove("show");
+    try {
+      await addDoc(col, { texto: pendiente.slice(0, 500), fecha: serverTimestamp() });
+    } catch (e) { console.error(e); }
+    texto.value = "";
+    pendiente = "";
+    btn.disabled = false;
+    $("archivo").classList.add("show");
+    escuchar();
+    $("archivo").scrollIntoView({ behavior: "smooth" });
+  });
+
+  function escuchar() {
+    if (escuchando) return;
+    escuchando = true;
+    const q = query(col, orderBy("fecha", "desc"), limit(100));
+    onSnapshot(q, snap => {
+      const ul = $("lista");
+      ul.innerHTML = "";
+      snap.forEach(d => {
+        const { texto, fecha } = d.data();
+        const li = document.createElement("li");
+        li.textContent = texto;
+        const small = document.createElement("small");
+        small.textContent = fecha ? fecha.toDate().toLocaleString("es-MX") : "ahora";
+        li.appendChild(small);
+        ul.appendChild(li);
+      });
+    });
+  }
+</script>
+</body>
+</html>
